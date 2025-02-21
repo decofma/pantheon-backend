@@ -1,13 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException
+# main.py
+from fastapi import FastAPI, Depends, HTTPException, Body
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.middleware.cors import CORSMiddleware
 from datetime import timedelta
 import uvicorn
-from models import User, Move
-import auth
-import game
 import os
 
+from models import User, Move, MatchRoomRequest
+import auth
+import game
 
 # Configurações do JWT
 SECRET_KEY = "YOUR_SECRET_KEY"
@@ -16,9 +16,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 app = FastAPI()
 
+# Habilitar CORS se necessário (veja instruções anteriores)
+from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Ou use ["*"] para permitir todos (em desenvolvimento)
+    allow_origins=["*"],  # ajuste conforme necessário
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,11 +39,26 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def get_current_user(token: str = Depends(auth.oauth2_scheme)):
     return auth.get_current_user(token, SECRET_KEY, ALGORITHM)
 
-# Endpoint para entrar no matchmaking
+# Endpoint para matchmaking aleatório (Play Game)
 @app.post("/matchmaking/join")
 def join_matchmaking(current_user: User = Depends(get_current_user)):
     game_state = game.join_matchmaking(current_user.username)
     return game_state
+
+# Endpoints para salas personalizadas (Create Match e Join Match)
+@app.post("/match/create")
+def create_match_room_endpoint(request: MatchRoomRequest, current_user: User = Depends(get_current_user)):
+    result = game.create_match_room(current_user.username, request.room_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+@app.post("/match/join")
+def join_match_room_endpoint(request: MatchRoomRequest, current_user: User = Depends(get_current_user)):
+    result = game.join_match_room(current_user.username, request.room_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 # Endpoint para obter o estado do jogo
 @app.get("/game/{game_id}/state")
