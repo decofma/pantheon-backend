@@ -32,3 +32,6 @@ class GameState(BaseModel):
     deck: Dict[str, List[Any]]
     field: Dict[str, List[Any]]
     log: List[str]
+
+class MatchRoomRequest(BaseModel):
+    room_id: str
