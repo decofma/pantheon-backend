@@ -41,6 +41,11 @@ def join_matchmaking(current_user: User = Depends(get_current_user)):
     game_state = game.join_matchmaking(current_user.username)
     return game_state
 
+@app.get("/matchmaking/status")
+def matchmaking_status(current_user: User = Depends(get_current_user)):
+    status = game.get_matchmaking_status(current_user.username)
+    return status
+
 @app.post("/match/create")
 def create_match_room_endpoint(request: MatchRoomRequest, current_user: User = Depends(get_current_user)):
     result = game.create_match_room(current_user.username, request.room_id)
