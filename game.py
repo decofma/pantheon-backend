@@ -47,6 +47,16 @@ def create_game_state(players: List[str]) -> Dict[str, Any]:
         state["faith_points"][player] = 4
     return state
 
+def get_matchmaking_status(username: str) -> Dict[str, Any]:
+    """
+    Retorna o estado do jogo se o jogador já tiver sido emparelhado;
+    caso contrário, retorna uma mensagem informando que está aguardando um oponente.
+    """
+    game_state = find_active_game(username)
+    if game_state:
+        return game_state
+    return {"message": "Waiting for an opponent."}
+
 def find_active_game(username: str) -> Optional[Dict[str, Any]]:
     for state in active_games.values():
         if username in state["players"]:
