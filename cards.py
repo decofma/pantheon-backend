@@ -1,3 +1,28 @@
+from typing import Dict, Optional
+
+
+def get_all_cards() -> Dict[int, dict]:
+    """ Achata a estrutura de CARDS em um dicionário com IDs únicos para cada carta """
+    all_cards = {}
+    card_id = 1
+    for mitologia, categorias in CARDS.items():
+        for categoria, cartas in categorias.items():
+            for carta in cartas:
+                all_cards[card_id] = {
+                    "nome": carta["nome"],
+                    "poder": carta.get("poder"),
+                    "efeito": carta["efeito"],
+                    "atributo": carta["atributo"],
+                    "custo_fe": carta.get("custo_fe", 0),
+                    "mitologia": mitologia,
+                    "categoria": categoria
+                }
+                card_id += 1
+    return all_cards
+
+def get_card_by_id(card_id: int) -> Optional[dict]:
+    return get_all_cards().get(card_id)
+
 CARDS = {
     "Mitologia Grega": {
         "Deuses": [

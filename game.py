@@ -2,12 +2,11 @@
 import uuid
 from models import GameState, Move
 from typing import Dict, Any, List, Optional
+from cards import get_card_by_id
 
-# Filas e jogos ativos (em memória)
+# Variáveis globais
 matchmaking_queue: List[str] = []
 active_games: Dict[str, Dict[str, Any]] = {}
-
-# Estrutura para salas (lobby) de partida
 match_rooms: Dict[str, Dict[str, Any]] = {}
 
 def initialize_deck(username: str):
@@ -31,18 +30,21 @@ def create_game_state(players: List[str]) -> Dict[str, Any]:
         "players": players,
         "turn": players[0],
         "life_points": {players[0]: 50, players[1]: 50},
-        "faith_points": {players[0]: 4, players[1]: 4},
+        "faith_points": {players[0]: 0, players[1]: 0},
         "hand": {players[0]: [], players[1]: []},
         "deck": {
             players[0]: initialize_deck(players[0]),
             players[1]: initialize_deck(players[1])
         },
         "field": {players[0]: [], players[1]: []},
-        "log": [f"Game started between {players[0]} and {players[1]}."]
+        "log": [f"Game started between {players[0]} and {players[1]}."],
+        "phase": "preparation"  # Inicia no turno de preparação
     }
+    # Cada jogador inicia com 7 cartas e 4 pontos de fé (na fase de preparação)
     for player in players:
         for _ in range(7):
             draw_card(state, player)
+        state["faith_points"][player] = 4
     return state
 
 def find_active_game(username: str) -> Optional[Dict[str, Any]]:
@@ -52,14 +54,11 @@ def find_active_game(username: str) -> Optional[Dict[str, Any]]:
     return None
 
 def join_matchmaking(username: str) -> Dict[str, Any]:
-    # Se já estiver em uma partida ativa, retorne-a.
     existing = find_active_game(username)
     if existing:
         return existing
-    # Se não estiver, adicione à fila.
     if username not in matchmaking_queue:
         matchmaking_queue.append(username)
-    # Se houver pelo menos 2 na fila, crie a partida.
     if len(matchmaking_queue) >= 2:
         player1 = matchmaking_queue.pop(0)
         player2 = matchmaking_queue.pop(0)
@@ -69,6 +68,7 @@ def join_matchmaking(username: str) -> Dict[str, Any]:
     else:
         return {"message": "Waiting for an opponent."}
 
+# Funções para salas customizadas (não modificadas aqui)
 def create_match_room(username: str, room_id: str) -> Dict[str, Any]:
     if room_id in match_rooms:
         return {"error": "Sala já existe"}
@@ -97,65 +97,82 @@ def join_match_room(username: str, room_id: str) -> Dict[str, Any]:
     return room
 
 def leave_match(username: str) -> Dict[str, Any]:
-    # Remove de fila de matchmaking, se presente.
     if username in matchmaking_queue:
         matchmaking_queue.remove(username)
-    # Procura se o usuário está em alguma sala.
     for room_id, room in list(match_rooms.items()):
         if username in room["players"]:
             room["players"].remove(username)
-            # Se a sala ficar vazia, remove-a.
             if not room["players"]:
                 del match_rooms[room_id]
             else:
                 room["status"] = "waiting"
             return {"message": "Você abandonou a sala."}
-    # Procura se o usuário está em um jogo ativo.
     for game_id, state in list(active_games.items()):
         if username in state["players"]:
             del active_games[game_id]
             return {"message": "Partida abandonada."}
     return {"message": "Nenhuma partida ativa encontrada."}
 
-def get_game_state(game_id: str, username: str):
-    state = active_games.get(game_id)
-    if state and username in state["players"]:
-        return state
-    return None
-
-def process_move(game_id: str, username: str, move: Move):
+def process_move(game_id: str, username: str, move: Move) -> Dict[str, Any]:
     state = active_games.get(game_id)
     if not state:
         return {"error": "Game not found."}
     if state["turn"] != username:
         return {"error": "Not your turn."}
     
-    if move.move_type == "invocar":
-        card_id = move.data.get("card_id")
-        if card_id in state["hand"][username]:
-            state["hand"][username].remove(card_id)
-            state["field"][username].append(card_id)
-            state["log"].append(f"{username} summoned card {card_id}.")
-            cost = move.data.get("cost", 3)
-            state["faith_points"][username] -= cost
-        else:
-            state["log"].append(f"{username} does not have card {card_id} in hand.")
-    elif move.move_type == "atacar":
-        damage = move.data.get("damage", 3)
+    # Espera que move.data contenha a fase e o id da carta selecionada
+    phase = move.data.get("phase")
+    selected_card = move.data.get("selected_card")
+    
+    if phase not in ["invocation", "combat", "event"]:
+        return {"error": "Invalid phase for card play."}
+    
+    if phase == "invocation":
+        if selected_card not in state["hand"][username]:
+            return {"error": "Card not found in hand."}
+        card_detail = get_card_by_id(selected_card)
+        if not card_detail:
+            return {"error": "Invalid card."}
+        cost = card_detail.get("custo_fe", 0)
+        if state["faith_points"][username] < cost:
+            return {"error": "Not enough faith points."}
+        state["hand"][username].remove(selected_card)
+        state["field"][username].append(selected_card)
+        state["faith_points"][username] -= cost
+        state["log"].append(f"{username} invoked {card_detail['nome']}.")
+        # Após invocação, o estado pode avançar para a fase de combate
+        state["phase"] = "combat"
+    
+    # Para outras fases, implemente lógica semelhante (por exemplo, para 'combat' ou 'event')
+    elif phase == "combat":
+        # Neste exemplo, o movimento de combate poderia especificar um ataque com um card da field.
+        damage = move.data.get("damage", 0)
         opponent = [p for p in state["players"] if p != username][0]
         state["life_points"][opponent] -= damage
-        state["log"].append(f"{username} attacked {opponent} for {damage} damage.")
-    elif move.move_type == "evento":
-        state["log"].append(f"{username} played an event card.")
-    else:
-        state["log"].append(f"{username} performed an unknown move.")
+        state["log"].append(f"{username} attacked {opponent} for {damage} damage in combat phase.")
+        state["phase"] = "event"
     
-    # Fim do turno: regenerar pontos de fé e comprar carta para ambos.
-    state["faith_points"][username] += 4
-    draw_card(state, username)
-    opponent = [p for p in state["players"] if p != username][0]
-    state["turn"] = opponent
-    state["faith_points"][opponent] += 4
-    draw_card(state, opponent)
+    elif phase == "event":
+        # Processamento de carta de evento, semelhante à invocação
+        event_card = selected_card  # Supomos que o jogador selecionou uma carta de evento
+        if event_card not in state["hand"][username]:
+            return {"error": "Event card not found in hand."}
+        card_detail = get_card_by_id(event_card)
+        if not card_detail:
+            return {"error": "Invalid event card."}
+        cost = card_detail.get("custo_fe", 0)
+        if state["faith_points"][username] < cost:
+            return {"error": "Not enough faith points for event."}
+        state["hand"][username].remove(event_card)
+        state["faith_points"][username] -= cost
+        state["log"].append(f"{username} played event card {card_detail['nome']} in event phase.")
+        # Exemplo: se o evento causa dano direto
+        event_damage = move.data.get("effect_damage", 0)
+        opponent = [p for p in state["players"] if p != username][0]
+        state["life_points"][opponent] -= event_damage
+        # Encerra o turno, reiniciando para preparação e trocando o turno
+        state["phase"] = "preparation"
+        state["turn"] = opponent
+        # Na preparação do novo turno, o adversário receberá os bônus de fé e comprará uma carta (processo separado)
     
     return state

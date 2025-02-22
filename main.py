@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 import uvicorn
 import os
+from cards import get_all_cards
 
 from models import User, Move, MatchRoomRequest
 import auth
@@ -41,6 +42,11 @@ def join_matchmaking(current_user: User = Depends(get_current_user)):
     game_state = game.join_matchmaking(current_user.username)
     return game_state
 
+@app.get("/matchmaking/status")
+def matchmaking_status(current_user: User = Depends(get_current_user)):
+    status = game.get_matchmaking_status(current_user.username)
+    return status
+
 @app.post("/match/create")
 def create_match_room_endpoint(request: MatchRoomRequest, current_user: User = Depends(get_current_user)):
     result = game.create_match_room(current_user.username, request.room_id)
@@ -75,3 +81,7 @@ def submit_move(game_id: str, move: Move, current_user: User = Depends(get_curre
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
+@app.get("/cards")
+def get_cards():
+    return get_all_cards()
