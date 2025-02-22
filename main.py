@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 import uvicorn
 import os
+from cards import get_all_cards
 
 from models import User, Move, MatchRoomRequest
 import auth
@@ -80,3 +81,7 @@ def submit_move(game_id: str, move: Move, current_user: User = Depends(get_curre
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
+@app.get("/cards")
+def get_cards():
+    return get_all_cards()
