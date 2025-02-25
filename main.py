@@ -85,3 +85,8 @@ if __name__ == "__main__":
 @app.get("/cards")
 def get_cards():
     return get_all_cards()
+
+@app.get("/matchmaking/status")
+def matchmaking_status(current_user: User = Depends(get_current_user)):
+    status = game.get_matchmaking_status(current_user.username)
+    return status

@@ -3,6 +3,7 @@ import uuid
 from models import GameState, Move
 from typing import Dict, Any, List, Optional
 from cards import get_card_by_id
+from database import games_collection
 
 # Variáveis globais
 matchmaking_queue: List[str] = []
@@ -40,12 +41,18 @@ def create_game_state(players: List[str]) -> Dict[str, Any]:
         "log": [f"Game started between {players[0]} and {players[1]}."],
         "phase": "preparation"  # Inicia no turno de preparação
     }
-    # Cada jogador inicia com 7 cartas e 4 pontos de fé (na fase de preparação)
-    for player in players:
-        for _ in range(7):
-            draw_card(state, player)
-        state["faith_points"][player] = 4
+    games_collection.insert_one(state.copy())
     return state
+
+def get_matchmaking_status(username: str) -> Dict[str, Any]:
+    """
+    Retorna o estado do jogo se o jogador já tiver sido emparelhado;
+    caso contrário, retorna uma mensagem informando que está aguardando um oponente.
+    """
+    game_state = find_active_game(username)
+    if game_state:
+        return game_state
+    return {"message": "Waiting for an opponent."}
 
 def find_active_game(username: str) -> Optional[Dict[str, Any]]:
     for state in active_games.values():
@@ -57,16 +64,20 @@ def join_matchmaking(username: str) -> Dict[str, Any]:
     existing = find_active_game(username)
     if existing:
         return existing
+    
+    # Adiciona à fila se não estiver cheio
     if username not in matchmaking_queue:
         matchmaking_queue.append(username)
-    if len(matchmaking_queue) >= 2:
+    
+    # Tenta emparelhar jogadores a cada chamada
+    while len(matchmaking_queue) >= 2:
         player1 = matchmaking_queue.pop(0)
         player2 = matchmaking_queue.pop(0)
         state = create_game_state([player1, player2])
         active_games[state["game_id"]] = state
         return state
-    else:
-        return {"message": "Waiting for an opponent."}
+    
+    return {"message": "Aguardando oponente..."}
 
 # Funções para salas customizadas (não modificadas aqui)
 def create_match_room(username: str, room_id: str) -> Dict[str, Any]:
@@ -81,20 +92,44 @@ def create_match_room(username: str, room_id: str) -> Dict[str, Any]:
     match_rooms[room_id] = room
     return room
 
+def get_game_state(game_id: str, username: str):
+    state = games_collection.find_one(
+        {"game_id": game_id, "players": username}
+    )
+    return state
+
+# Modifique a função join_match_room para retornar o estado correto
 def join_match_room(username: str, room_id: str) -> Dict[str, Any]:
     if room_id not in match_rooms:
         return {"error": "Sala não encontrada"}
+    
     room = match_rooms[room_id]
+    
     if username in room["players"]:
-        return room
+        return {
+            "status": room["status"],
+            "game_state": room.get("game_state"),
+            "room_id": room_id,
+            "players": room["players"]
+        }
+    
     if len(room["players"]) >= 2:
         return {"error": "Sala já está completa"}
+    
     room["players"].append(username)
+    
     if len(room["players"]) == 2:
         room["status"] = "started"
-        room["game_state"] = create_game_state(room["players"])
-        active_games[room["game_state"]["game_id"]] = room["game_state"]
-    return room
+        game_state = create_game_state(room["players"])
+        room["game_state"] = game_state
+        active_games[game_state["game_id"]] = game_state
+        
+    return {
+        "status": room["status"],
+        "game_state": room.get("game_state"),
+        "room_id": room_id,
+        "players": room["players"]
+    }
 
 def leave_match(username: str) -> Dict[str, Any]:
     if username in matchmaking_queue:
